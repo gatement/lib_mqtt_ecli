@@ -12,5 +12,7 @@ main:
 test:
 	$(REBAR) eunit
 
+cl: clean
+
 clean:
 	rm -rf ./ebin

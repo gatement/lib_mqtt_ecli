@@ -1,0 +1,12 @@
+{application, mqtt_cli,
+ [
+  {description, "An MQTT client library written with Erlang."},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { mqtt_cli_app, []}},
+  {env, []}
+ ]}.
