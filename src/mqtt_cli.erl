@@ -16,8 +16,13 @@ mqtt_connect(Socket, Params) ->
     Packet = mqtt_util:build_connect(Params),
     ok = gen_tcp:send(Socket, Packet),
     receive
-        Data ->
-            ok
+        {tcp, Socket, RawData} ->
+            case RawData of
+                <<2:4/integer, _Byte1L:4/integer, 2, _Reserved:8/integer, 0>> ->
+                    ok;
+                _ ->
+                    error
+            end
     after
         3000 -> error
     end.
