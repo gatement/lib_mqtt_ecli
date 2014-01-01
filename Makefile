@@ -3,8 +3,15 @@
 REBAR = C:/dev/rebar/rebar.cmd
 
 
-main:
-	$(REBAR) get-deps compile
+main: get-deps co
+
+co: compile
+
+compile:
+	$(REBAR) compile
+
+get-deps:
+	$(REBAR) get-deps
 
 
 .PHONY: test clean

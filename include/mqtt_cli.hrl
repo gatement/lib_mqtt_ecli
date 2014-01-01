@@ -1,3 +1,10 @@
+%% CONNECT PARAM
+-record(mqtt_connect_params, {username, password, clean_session, keep_alive, client_id}).
+
+
+
+
+
 %% MQTT_V3.1 MSG
 -define(MQTT_MSG_CONNECT,     2#00010000).
 -define(MQTT_MSG_CONNACK,     2#00100000).
