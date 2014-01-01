@@ -1,3 +1,6 @@
+%% APPNAME
+-define(APPNAME, mqtt_cli).
+
 %% CONNECT PARAM
 -record(mqtt_connect_params, {username, password, clean_session, keep_alive, client_id}).
 
