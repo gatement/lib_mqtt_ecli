@@ -12,24 +12,47 @@
 %% API functions
 %% ===================================================================
 
+%% Do not support Will
 build_connect(Params) ->
     #mqtt_connect_params {
+        username = Username,
+        password = Password,
+        clean_session = CleanSession,
         keep_alive = KeepAlive,
         client_id = ClientId
     } = Params,
 
 	%% Connect flags.
-	%% bit     |7    |6        |5           |4    3   |2         |1             |0
-	%% byte 1  |User |Password |Will Retain |Will QoS |Will Flag |Clean Session |Reserved
-	ConnectFlags = 2#00000000,
-	VariableHeader = build_connect_variable_header(KeepAlive, ConnectFlags),
+	%% bit     |7        |6        |5           |4    3   |2         |1             |0
+	%% byte 1  |Username |Password |Will Retain |Will QoS |Will Flag |Clean Session |Reserved
+	ConnectFlags0 = 2#00000000,
+    ConnectFlags1 = case Username of
+        [] ->
+            ConnectFlags0;
+        _ ->
+            ConnectFlags0 bor 2#10000000
+    end,
+    ConnectFlags2 = case Password of
+        [] ->
+            ConnectFlags1;
+        _ ->
+            ConnectFlags1 bor 2#01000000
+    end,
+    ConnectFlags3 = case CleanSession of
+        false ->
+            ConnectFlags2;
+        _ ->
+            ConnectFlags2 bor 2#00000010
+    end,
 
-	Payload = build_connect_payload(ClientId),
+	VariableHeader = build_connect_variable_header(KeepAlive, ConnectFlags3),
+	Payload = build_connect_payload(Username, Password, ClientId),
 
 	Length = erlang:size(VariableHeader) + erlang:size(Payload),
 	FixedHeader = build_fixed_header(?MQTT_MSG_CONNECT, ?DUP0, ?QOS0, ?RETAIN0, Length),
 
 	erlang:list_to_binary([FixedHeader, VariableHeader, Payload]).
+
 
 %% ===================================================================
 %% Local Functions
@@ -42,21 +65,38 @@ build_connect(Params) ->
 build_fixed_header(MsgType, Dup, Qos, Retain, Length) ->
 	Header = MsgType bor Dup bor Qos bor Retain,
 	RemainingLength = build_remaining_length(Length, []),
-	[Header|RemainingLength].
+	[Header | RemainingLength].
 
 
-build_connect_variable_header(KeepAliveTimer, ConnectFlags) ->
+build_connect_variable_header(KeepAlive, ConnectFlags) ->
 	ProtocalName = [0, 6, <<"MQIsdp">>],
 	ProtocalVer = 3,
-
-	KeepAliveTimerH = KeepAliveTimer div 256,
-	KeepAliveTimerL = KeepAliveTimer rem 256,
-
-	erlang:list_to_binary([ProtocalName, ProtocalVer, ConnectFlags, KeepAliveTimerH, KeepAliveTimerL]).
+	KeepAliveData = integer_to_2b(KeepAlive),
+    erlang:list_to_binary([ProtocalName, ProtocalVer, ConnectFlags, KeepAliveData]).
 
 
-build_connect_payload(ClientId) ->
-    ClientId.
+%% Do not support Will
+build_connect_payload(Username, Password, ClientId) ->
+    Result0 = [],
+    Result1 = case Password of
+        [] ->
+            Result0;
+        _ ->
+            PasswordData = encode_string(Password),
+            [PasswordData | Result0]
+    end,
+    Result2 = case Username of
+        [] ->
+            Result1;
+        _ ->
+            UsernameData = encode_string(Username),
+            [UsernameData | Result1]
+    end,
+    
+    ClientIdData = encode_string(ClientId),
+    Result3 = [ClientIdData | Result2],
+
+    erlang:list_to_binary(Result3).
 
 
 build_remaining_length(0, Result) ->
@@ -73,12 +113,85 @@ build_remaining_length(Length, Result) ->
 	build_remaining_length(X, [Digit|Result]).
 
 
+integer_to_2b(I) ->
+    B1 = I band 16#FF,
+    B2 = (I band 16#FF00) bsr 8,
+    [B2, B1].
+
+
+integer_to_4b(I) ->
+    B1 = I band 16#FF,
+    B2 = (I band 16#FF00) bsr 8,
+    B3 = (I band 16#FF0000) bsr 16,
+    B4 = (I band 16#FF000000) bsr 24,
+    [B4, B3, B2, B1].
+
+
+encode_string(Content) ->
+    ContentBin = unicode:characters_to_binary(Content, latin1),
+    ContentBinLen = integer_to_2b(erlang:size(ContentBin)),
+    [ContentBinLen, ContentBin].
+
+
 %% ===================================================================
 %% Eunit Tests
 %% ===================================================================
 
+build_connect_test() ->
+    Params = #mqtt_connect_params {
+        username = "guest",
+        password = "123456",
+        clean_session = true,
+        keep_alive = 600,
+        client_id = "johnson"
+    },
+    Actual = build_connect(Params),
+
+    Expected0 = [16#10, 36, 16#00, 16#06, "MQIsdp", 3, 16#C2, 16#02, 16#58, 16#00, 16#07, "johnson", 16#00, 16#05, "guest", 16#00, 16#06, "123456"],
+    Expected1 = erlang:list_to_binary(Expected0),
+
+	Expected1 = Actual.
+
+
 build_remaining_length_test_() ->
     [
+        ?_assert(build_remaining_length(0, []) =:= []),
         ?_assert(build_remaining_length(1, []) =:= [1]),
-        ?_assert(build_remaining_length(255, []) =:= [1, 255])
+        ?_assert(build_remaining_length(255, []) =:= [255, 1]),
+        ?_assert(build_remaining_length(321, []) =:= [193, 2]),
+        ?_assert(build_remaining_length(127, []) =:= [16#7F]),
+        ?_assert(build_remaining_length(128, []) =:= [16#80, 16#01]),
+        ?_assert(build_remaining_length(16383, []) =:= [16#FF, 16#7F]),
+        ?_assert(build_remaining_length(16384, []) =:= [16#80, 16#80, 16#01]),
+        ?_assert(build_remaining_length(2097151, []) =:= [16#FF, 16#FF, 16#7F]),
+        ?_assert(build_remaining_length(2097152, []) =:= [16#80, 16#80, 16#80, 16#01]),
+        ?_assert(build_remaining_length(268435455, []) =:= [16#FF, 16#FF, 16#FF, 16#7F])
+    ]. 
+
+
+integer_to_2b_test_() ->
+    [
+        ?_assert(integer_to_2b(10) =:= [0, 16#0A]),
+        ?_assert(integer_to_2b(10000) =:= [16#27, 16#10]),
+        ?_assert(integer_to_2b(11206964) =:= [16#01, 16#34]) %% lost high bytes
     ].
+
+
+integer_to_4b_test_() ->
+    [
+        ?_assert(integer_to_4b(10) =:= [0, 0, 0, 16#0A]),
+        ?_assert(integer_to_4b(10000) =:= [0, 0, 16#27, 16#10]),
+        ?_assert(integer_to_4b(11206964) =:= [0, 16#AB, 16#01, 16#34]),
+        ?_assert(integer_to_4b(3759289430) =:= [16#E0, 16#12, 16#34, 16#56]),
+        ?_assert(integer_to_4b(660889285718) =:= [16#E0, 16#12, 16#34, 16#56]) %% lost high bytes
+    ].
+
+
+encode_string_test_() ->
+    [
+        ?_assert(encode_string("") =:= [[16#00, 16#00], <<"">>]),
+        ?_assert(encode_string("a") =:= [[16#00, 16#01], <<"a">>]),
+        ?_assert(encode_string("abc") =:= [[16#00, 16#03], <<"abc">>])
+    ].
+
+

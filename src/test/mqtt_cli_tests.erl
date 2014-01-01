@@ -1,4 +1,4 @@
--module(mqtt_cli_test).
+-module(mqtt_cli_tests).
 -include("mqtt_cli.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -export([ ]).
