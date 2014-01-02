@@ -2,7 +2,11 @@
 -include("mqtt_cli.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -export([
-    build_connect/1
+    build_connect/1,
+    build_disconnect/0,
+    build_publish/2,
+    build_subscribe/2,
+    build_unsubscribe/2
     ]).
 -vsn("0.1.0").
 
@@ -54,6 +58,45 @@ build_connect(Params) ->
 	erlang:list_to_binary([FixedHeader, VariableHeader, Payload]).
 
 
+build_disconnect() ->
+    FixedHeader = [?MQTT_MSG_DISCONNECT, 0],
+	erlang:list_to_binary([FixedHeader]).
+
+
+%% only support QoS 0, no Retain
+build_publish(Topic, Payload) ->
+	VariableHeader = build_publish_variable_header(Topic),
+	Payload2 = erlang:list_to_binary([Payload]),
+
+	Length = erlang:size(VariableHeader) + erlang:size(Payload2),
+	FixedHeader = build_fixed_header(?MQTT_MSG_PUBLISH, ?DUP0, ?QOS0, ?RETAIN0, Length),
+
+	erlang:list_to_binary([FixedHeader, VariableHeader, Payload2]).
+
+
+%% only subscribe one topic at a single SUBSCRIBE request
+%% only subscribe QoS 0 topic
+build_subscribe(Topic, MessageId) ->
+	VariableHeader = build_subscribe_variable_header(MessageId),
+    Payload = build_subscribe_payload(Topic),
+
+	Length = erlang:size(VariableHeader) + erlang:size(Payload),
+	FixedHeader = build_fixed_header(?MQTT_MSG_SUBSCRIBE, ?DUP0, ?QOS1, ?RETAIN0, Length),
+
+	erlang:list_to_binary([FixedHeader, VariableHeader, Payload]).
+
+
+%% only unsubscribe one topic at a single UNSUBSCRIBE request
+build_unsubscribe(Topic, MessageId) ->
+	VariableHeader = build_unsubscribe_variable_header(MessageId),
+    Payload = build_unsubscribe_payload(Topic),
+
+	Length = erlang:size(VariableHeader) + erlang:size(Payload),
+	FixedHeader = build_fixed_header(?MQTT_MSG_UNSUBSCRIBE, ?DUP0, ?QOS1, ?RETAIN0, Length),
+
+	erlang:list_to_binary([FixedHeader, VariableHeader, Payload]).
+
+
 %% ===================================================================
 %% Local Functions
 %% ===================================================================
@@ -73,6 +116,21 @@ build_connect_variable_header(KeepAlive, ConnectFlags) ->
 	ProtocalVer = 3,
 	KeepAliveData = integer_to_2b(KeepAlive),
     erlang:list_to_binary([ProtocalName, ProtocalVer, ConnectFlags, KeepAliveData]).
+
+
+build_publish_variable_header(Topic) ->
+    TopicData = encode_string(Topic),
+    erlang:list_to_binary([TopicData]).
+
+
+build_subscribe_variable_header(MessageId) ->
+    MessageIdData = integer_to_2b(MessageId),
+    erlang:list_to_binary([MessageIdData]).
+
+
+build_unsubscribe_variable_header(MessageId) ->
+    MessageIdData = integer_to_2b(MessageId),
+    erlang:list_to_binary([MessageIdData]).
 
 
 %% Do not support Will
@@ -97,6 +155,19 @@ build_connect_payload(Username, Password, ClientId) ->
     Result3 = [ClientIdData | Result2],
 
     erlang:list_to_binary(Result3).
+
+
+%% only subscribe one topic at a single SUBSCRIBE request
+%% only subscribe QoS 0 topic
+build_subscribe_payload(Topic) ->
+    TopicData = encode_string(Topic),
+    erlang:list_to_binary([TopicData, ?QOS0]).
+
+
+%% only unsubscribe one topic at a single UNSUBSCRIBE request
+build_unsubscribe_payload(Topic) ->
+    TopicData = encode_string(Topic),
+    erlang:list_to_binary([TopicData]).
 
 
 build_remaining_length(0, Result) ->
@@ -152,6 +223,38 @@ build_connect_test() ->
 
 	Expected1 = Actual.
 
+
+build_publish_test() ->
+    Topic = "a/b",
+    Payload = 123,
+    Actual = build_publish(Topic, Payload),
+
+    Expected0 = [16#30, 6, 0, 3, 16#61, 16#2F, 16#62, 123],
+    Expected1 = erlang:list_to_binary(Expected0),
+
+	Expected1 = Actual.
+
+
+build_subscribe_test() ->
+    Topic = "a/b",
+    MessageId = 1,
+    Actual = build_subscribe(Topic, MessageId),
+
+    Expected0 = [16#82, 8, 0, 1, 0, 3, 16#61, 16#2F, 16#62, 0],
+    Expected1 = erlang:list_to_binary(Expected0),
+
+	Expected1 = Actual.
+
+
+build_unsubscribe_test() ->
+    Topic = "a/b",
+    MessageId = 1,
+    Actual = build_unsubscribe(Topic, MessageId),
+
+    Expected0 = [16#A2, 7, 0, 1, 0, 3, 16#61, 16#2F, 16#62],
+    Expected1 = erlang:list_to_binary(Expected0),
+
+	Expected1 = Actual.
 
 build_remaining_length_test_() ->
     [
