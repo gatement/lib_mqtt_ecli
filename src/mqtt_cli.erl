@@ -10,6 +10,8 @@
     ]).
 -vsn("0.1.0").
 
+-define(APPNAME, mqtt_cli).
+
 %% Implementation of MQTT_V3.1
 
 %% ===================================================================
@@ -148,7 +150,7 @@ mqtt_unsubscribe_test() ->
 %% ===================================================================
 
 open_socket() ->
-    application:start(mqtt_cli),
+    application:start(?APPNAME),
     {ok, Server} = application:get_env(?APPNAME, test_mqtt_server),
     {ok, Port} = application:get_env(?APPNAME, test_mqtt_port),
     {ok, Socket} = gen_tcp:connect(Server, Port, [binary, {active, true}]),
