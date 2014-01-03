@@ -6,7 +6,11 @@
     build_disconnect/0,
     build_publish/2,
     build_subscribe/2,
-    build_unsubscribe/2
+    build_unsubscribe/2,
+    extract_fixed_header/2,
+    extract_publish_topic/1,
+    extract_publish_payload/1,
+    get_message_type/1
     ]).
 -vsn("0.1.0").
 
@@ -95,6 +99,48 @@ build_unsubscribe(Topic, MessageId) ->
 	FixedHeader = build_fixed_header(?MQTT_MSG_UNSUBSCRIBE, ?DUP0, ?QOS1, ?RETAIN0, Length),
 
 	erlang:list_to_binary([FixedHeader, VariableHeader, Payload]).
+
+
+%% return {FixedHeader, RestData}
+extract_fixed_header(<<>>, Acc) ->
+    FixedHeader = erlang:list_to_binary(lists:reverse(Acc)),
+    {FixedHeader, <<>>};
+extract_fixed_header(Packet, []) ->
+    <<Byte1:8/integer, Rest/binary>> = Packet,
+    extract_fixed_header(Rest, [Byte1]); 
+extract_fixed_header(Packet, Acc) ->
+    <<Byte1:8/integer, Rest/binary>> = Packet,
+    if
+        Byte1 > 127 ->
+            extract_fixed_header(Rest, [Byte1 | Acc]); 
+        true ->
+            FixedHeader = erlang:list_to_binary(lists:reverse([Byte1 | Acc])),
+            {FixedHeader, Rest}
+    end.
+
+
+%% return {Topic, RestData}
+extract_publish_topic(Packet) ->
+    {FixedHeader, Rest} = extract_fixed_header(Packet, []),
+    case get_message_type(FixedHeader) of
+        ?MQTT_MSG_PUBLISH bsr 4 ->
+            <<TopicLen:16/integer-big, Rest2/binary>> = Rest,
+            <<Topic0:TopicLen/binary, Rest3/binary>> = Rest2,
+            {erlang:binary_to_list(Topic0), Rest3};
+        _ ->
+            error
+    end.
+
+
+%% Only support QoS 0
+extract_publish_payload(Packet) ->
+    {_Topic, Rest} = extract_publish_topic(Packet),
+    Rest.
+
+
+get_message_type(Packet) ->
+    <<MsgType:4/integer, _Byte1L:4/integer, _/binary>> = Packet,
+    MsgType.
 
 
 %% ===================================================================
@@ -298,3 +344,36 @@ encode_string_test_() ->
     ].
 
 
+get_message_type_test_() ->
+    [
+        ?_assert(get_message_type(<<16#12>>) =:= 1),
+        ?_assert(get_message_type(<<16#31>>) =:= 3),
+        ?_assert(get_message_type(<<16#12, 1, 2, 3>>) =:= 1),
+        ?_assert(get_message_type(<<16#31, 1, 2, 3>>) =:= 3)
+    ].
+
+
+extract_fixed_header_test() ->
+    [
+        ?_assert(extract_fixed_header(<<>>, []) =:= {<<>>, <<>>}),
+        ?_assert(extract_fixed_header(<<16#FF>>, []) =:= {<<16#FF>>, <<>>}),
+        ?_assert(extract_fixed_header(<<16#01, 16#02, 16#03, 16#04>>, []) =:= {<<16#01, 16#02>>, <<16#03, 16#04>>}),
+        ?_assert(extract_fixed_header(<<16#01, 16#F2, 16#03, 16#04>>, []) =:= {<<16#01, 16#F2, 16#03>>, <<16#04>>}),
+        ?_assert(extract_fixed_header(<<16#01, 16#F2, 16#F3, 16#04>>, []) =:= {<<16#01, 16#F2, 16#F3, 16#04>>, <<>>})
+    ].
+
+
+extract_publish_topic_test_() ->
+    [
+        ?_assert(extract_publish_topic(<<16#30, 3, 0, 1, $a>>) =:= {"a", <<>>}),
+        ?_assert(extract_publish_topic(<<16#30, 5, 0, 1, $a, 1, 2>>) =:= {"a", <<1, 2>>}),
+        ?_assert(extract_publish_topic(<<16#30, 6, 0, 2, $a, $b, 1, 2>>) =:= {"ab", <<1, 2>>})
+    ].
+
+
+extract_publish_payload_test_() ->
+    [
+        ?_assert(extract_publish_payload(<<16#30, 3, 0, 1, $a>>) =:= <<>>),
+        ?_assert(extract_publish_payload(<<16#30, 5, 0, 1, $a, 1, 2>>) =:= <<1, 2>>),
+        ?_assert(extract_publish_payload(<<16#30, 6, 0, 2, $a, $b, 1, 2>>) =:= <<1, 2>>)
+    ].
