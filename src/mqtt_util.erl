@@ -128,7 +128,7 @@ extract_publish_topic(Packet) ->
             <<Topic0:TopicLen/binary, Rest3/binary>> = Rest2,
             {erlang:binary_to_list(Topic0), Rest3};
         _ ->
-            error
+            {[], <<>>}
     end.
 
 
@@ -365,6 +365,7 @@ extract_fixed_header_test() ->
 
 extract_publish_topic_test_() ->
     [
+        ?_assert(extract_publish_topic(<<16#10, 3, 0, 1, $a>>) =:= {"", <<>>}),
         ?_assert(extract_publish_topic(<<16#30, 3, 0, 1, $a>>) =:= {"a", <<>>}),
         ?_assert(extract_publish_topic(<<16#30, 5, 0, 1, $a, 1, 2>>) =:= {"a", <<1, 2>>}),
         ?_assert(extract_publish_topic(<<16#30, 6, 0, 2, $a, $b, 1, 2>>) =:= {"ab", <<1, 2>>})
