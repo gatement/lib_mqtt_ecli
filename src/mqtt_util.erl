@@ -8,6 +8,7 @@
     build_subscribe/2,
     build_unsubscribe/2,
     extract_fixed_header/2,
+    extract_remaining_length/1,
     extract_publish_topic/1,
     extract_publish_payload/1,
     get_message_type/1
@@ -117,6 +118,11 @@ extract_fixed_header(Packet, Acc) ->
             FixedHeader = erlang:list_to_binary(lists:reverse([Byte1 | Acc])),
             {FixedHeader, Rest}
     end.
+
+
+extract_remaining_length(Packet) ->
+    <<_:8, Rest/binary>> = Packet,
+    extract_remaining_length(Rest, 1, 0).
 
 
 %% return {Topic, RestData}
@@ -250,6 +256,12 @@ encode_string(Content) ->
     [ContentBinLen, ContentBin].
 
 
+extract_remaining_length(<<1:1, Len:7, Rest/binary>>, Multiplier, Value) ->
+    extract_remaining_length(Rest, Multiplier * 128, Value + Len * Multiplier);
+extract_remaining_length(<<0:1, Len:7, _Rest/binary>>, Multiplier, Value) ->
+    Value + Len * Multiplier.
+
+
 %% ===================================================================
 %% Eunit Tests
 %% ===================================================================
@@ -302,6 +314,7 @@ build_unsubscribe_test() ->
 
 	Expected1 = Actual.
 
+
 build_remaining_length_test_() ->
     [
         ?_assert(build_remaining_length(0, []) =:= []),
@@ -316,6 +329,20 @@ build_remaining_length_test_() ->
         ?_assert(build_remaining_length(2097152, []) =:= [16#80, 16#80, 16#80, 16#01]),
         ?_assert(build_remaining_length(268435455, []) =:= [16#FF, 16#FF, 16#FF, 16#7F])
     ]. 
+
+
+extract_remaining_length_test_() ->
+    [
+        ?_assert(extract_remaining_length(<<1, 1>>) =:= 1),
+        ?_assert(extract_remaining_length(<<1, 2>>) =:= 2),
+        ?_assert(extract_remaining_length(<<1, 127>>) =:= 127),
+        ?_assert(extract_remaining_length(<<1, 16#80, 16#01>>) =:= 128),
+        ?_assert(extract_remaining_length(<<1, 16#FF, 16#7F>>) =:= 16383),
+        ?_assert(extract_remaining_length(<<1, 16#80, 16#80, 16#01>>) =:= 16384),
+        ?_assert(extract_remaining_length(<<1, 16#FF, 16#FF, 16#7F>>) =:= 2097151),
+        ?_assert(extract_remaining_length(<<1, 16#80, 16#80, 16#80, 16#01>>) =:= 2097152),
+        ?_assert(extract_remaining_length(<<1, 16#FF, 16#FF, 16#FF, 16#7F>>) =:= 268435455)
+    ].
 
 
 integer_to_2b_test_() ->
