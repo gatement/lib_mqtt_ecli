@@ -9,7 +9,7 @@
                  ]},
   {mod, { mqtt_cli_app, []}},
   {env, [
-      {test_mqtt_server, "localhost"}, 
+      {test_mqtt_server, "dev.com"}, 
       {test_mqtt_port, 1883}, 
       {test_mqtt_username, "guest"}, 
       {test_mqtt_password, "guest"}, 
